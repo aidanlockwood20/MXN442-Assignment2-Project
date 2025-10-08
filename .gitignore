@@ -1,2 +1,7 @@
 mxn442_assignment_2/
 data/
+generated_data/paraguay_catalog_matches.csv
+generated_data/paraguay_procurement_with_quantities.csv
+generated_data/paraguay_tender_contracts.json
+generated_data/paraguay_tender_contracts_found.json
+generated_data/uruguay_procurement_data_sample.xlsx
