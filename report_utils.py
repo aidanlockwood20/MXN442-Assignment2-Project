@@ -447,6 +447,7 @@ def quantity_mapping_fixed(df, contract_quantities):
                 if product_code in contract_items:
                     df.loc[index, 'quantity'] = contract_items[product_code]
                     updated_rows += 1
+            df['quantity'] = pd.to_numeric(df['quantity'], errors='coerce')
     
     print(f'Results:')
     print(f'- Total contract groups checked: {total_contracts_checked}')
