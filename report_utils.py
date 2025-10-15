@@ -15,7 +15,6 @@ from deep_translator import GoogleTranslator
 
 import asyncio
 import nest_asyncio
-import aiohttp
 nest_asyncio.apply()
 import json
 
@@ -454,42 +453,4 @@ def quantity_mapping_fixed(df, contract_quantities):
     print(f'- Contracts with quantity data: {len([uri for uri in contract_groupings.groups.keys() if uri in contract_quantities])}')
     print(f'- Rows updated with quantities: {updated_rows}')
     
-    return df
-
-def unit_price_mapping(df, contract_unit_prices):
-    if 'unit_price' not in df.columns:
-        df['unit_price'] = None
-
-        updated_rows = 0
-        total_contracts_checked = 0
-
-        contract_groupings = df.groupby('tender_publications_lastcontract')
-
-        for contract_uri, grouped_data_frame in tqdm(contract_groupings, desc='Mapping Contract Unit Prices'):
-            total_contracts_checked += 1
-
-            if contract_uri in contract_unit_prices:
-                contract_items = contract_unit_prices[contract_uri]
-
-                for index in grouped_data_frame.index:
-                    product_code = str(df.loc[index, 'lot_productCode'])
-
-                    if product_code in contract_items:
-                        df.loc[index, 'unit_price'] = contract_items[product_code]
-                        updated_rows += 1
-                    else:
-                        product_code_clean = product_code.replace('-', '').replace(' ', '')
-                        for contract_product_id, price in contract_items.items():
-                            contract_id_clean = str(contract_product_id).replace('-', '').replace(' ', '')
-                            if (product_code_clean == contract_id_clean or 
-                                product_code in str(contract_product_id) or 
-                                str(contract_product_id) in product_code):
-                                df.loc[index, 'unit_price'] = price
-                                updated_rows += 1
-                                break
-    print(f'Unit Price Mapping Results:')
-    print(f'- Total contract groups checked: {total_contracts_checked}')
-    print(f'- Contracts with unit price data: {len([uri for uri in contract_groupings.groups.keys() if uri in contract_unit_prices])}')
-    print(f'- Rows updated with unit prices: {updated_rows}')
-
     return df
