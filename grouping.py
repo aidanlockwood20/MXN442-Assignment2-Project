@@ -33,9 +33,6 @@ def load_data_with_deciles(csv_path, with_numerical_variables = False):
     decision_labels = [f'Decile {i}' for i in range(1, len(decision_bins))]
     df['decision_speed_decile'] = pd.cut(df['decision_period_days'], bins=decision_bins, labels=decision_labels, right=False, include_lowest=True)
 
-    # Month from tender_publications_firstcallfor
-    df['month'] = pd.to_datetime(df['tender_publications_firstcallfor'], errors='coerce').dt.month
-
     # Number of bidders
     bidder_bins = [0, 2, 5, 75]
     bidder_labels = [f'Decile {i}' for i in range(1, len(bidder_bins))]
@@ -78,7 +75,7 @@ def load_data_with_deciles(csv_path, with_numerical_variables = False):
             'translated_procedure_types',
             'submission_period_days',
             'decision_period_days',
-            'month',
+            'tender_month',
             'tender_recordedbidscount',
             'supplier_market_share_percent',
             'buyer_concentration_percent',
@@ -97,7 +94,7 @@ def load_data_with_deciles(csv_path, with_numerical_variables = False):
             'translated_procedure_types',
             'submission_period_group',
             'decision_speed_decile',
-            'month',
+            'tender_month',
             'bidders_decile',
             'supplier_market_share_decile',
             'buyer_concentration_decile',
