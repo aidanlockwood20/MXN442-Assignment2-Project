@@ -1,4 +1,6 @@
-mxn442_assignment_2/
+mxn442_project/
 data/
 generated_data/
-__pycache__/
+__pycache__/report_utils.cpython-312.pyc
+
+.vscode/

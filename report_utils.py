@@ -5,6 +5,12 @@ import pandas as pd
 # I decided to use multithreading to complete the translation to run faster
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import nltk
+nltk.download('stopwords', quiet=True)
+nltk.download('punkt', quiet=True)
+from nltk.corpus import stopwords
+spanish_stopwords = stopwords.words('spanish')
+
 import os
 
 # Importing a progress bar due to how big the catalog dataset are
@@ -17,7 +23,7 @@ import asyncio
 import nest_asyncio
 nest_asyncio.apply()
 import json
-
+import aiohttp
 import time
 
 
@@ -454,3 +460,161 @@ def quantity_mapping_fixed(df, contract_quantities):
     print(f'- Rows updated with quantities: {updated_rows}')
     
     return df
+
+import difflib
+
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+import re
+
+def get_closest_catalog_match(item_description, catalog_df, top_n=3):
+    """
+    Find the closest matching products in catalog using multiple similarity methods
+    
+    Parameters:
+    item_description (str): Description of the item to match
+    catalog_df (DataFrame): Catalog dataframe with 'Clase' and 'Cód. Artículo' columns
+    top_n (int): Number of top matches to return
+    
+    Returns:
+    dict: Contains matching results with similarity scores
+    """
+    if not item_description or catalog_df.empty:
+        return {'matches': [], 'method': 'none', 'best_score': 0}
+    
+    # Preprocess the input description
+    clean_description = preprocess_text(item_description)
+    
+    # Preprocess catalog descriptions
+    catalog_df = catalog_df.copy()
+    catalog_df['clean_clase'] = catalog_df['Clase'].apply(preprocess_text)
+    
+    # Method 1: Exact word matching (your existing approach)
+    word_matches = []
+    filtered_words = [word for word in clean_description.split() 
+                     if word.lower() not in spanish_stopwords and len(word) > 2]
+    
+    for word in filtered_words:
+        matches = catalog_df[catalog_df['clean_clase'].str.contains(word, case=False, na=False)]
+        if len(matches) > 0:
+            for _, match in matches.iterrows():
+                word_matches.append({
+                    'product_id': match['Cód. Artículo'],
+                    'description': match['Clase'],
+                    'method': 'word_match',
+                    'matching_word': word,
+                    'score': 0.7  # Base score for word matches
+                })
+    
+    # Method 2: TF-IDF Cosine Similarity
+    tfidf_matches = []
+    if len(catalog_df) > 0:
+        try:
+            # Create TF-IDF vectors
+            all_descriptions = [clean_description] + catalog_df['clean_clase'].tolist()
+            vectorizer = TfidfVectorizer(stop_words=spanish_stopwords, ngram_range=(1, 2))
+            tfidf_matrix = vectorizer.fit_transform(all_descriptions)
+            
+            # Calculate similarity
+            similarities = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:]).flatten()
+            
+            # Get top matches
+            top_indices = similarities.argsort()[-top_n:][::-1]
+            
+            for idx in top_indices:
+                if similarities[idx] > 0.1:  # Minimum similarity threshold
+                    catalog_row = catalog_df.iloc[idx]
+                    tfidf_matches.append({
+                        'product_id': catalog_row['Cód. Artículo'],
+                        'description': catalog_row['Clase'],
+                        'method': 'tfidf_similarity',
+                        'score': float(similarities[idx])
+                    })
+        except Exception as e:
+            print(f"TF-IDF matching error: {e}")
+    
+    # Method 3: Difflib sequence matching
+    difflib_matches = []
+    for _, row in catalog_df.iterrows():
+        similarity = difflib.SequenceMatcher(None, clean_description, row['clean_clase']).ratio()
+        if similarity > 0.3:  # Minimum similarity threshold
+            difflib_matches.append({
+                'product_id': row['Cód. Artículo'],
+                'description': row['Clase'],
+                'method': 'sequence_match',
+                'score': similarity
+            })
+    
+    # Combine all matches and rank by score
+    all_matches = word_matches + tfidf_matches + difflib_matches
+    
+    # Remove duplicates and aggregate scores
+    product_scores = {}
+    for match in all_matches:
+        product_id = match['product_id']
+        if product_id not in product_scores:
+            product_scores[product_id] = {
+                'product_id': product_id,
+                'description': match['description'],
+                'scores': [],
+                'methods': []
+            }
+        product_scores[product_id]['scores'].append(match['score'])
+        product_scores[product_id]['methods'].append(match['method'])
+    
+    # Calculate final scores (weighted average)
+    final_matches = []
+    for product_id, data in product_scores.items():
+        # Weight different methods
+        method_weights = {'word_match': 0.4, 'tfidf_similarity': 0.4, 'sequence_match': 0.2}
+        
+        weighted_score = 0
+        total_weight = 0
+        for i, method in enumerate(data['methods']):
+            weight = method_weights.get(method, 0.2)
+            weighted_score += data['scores'][i] * weight
+            total_weight += weight
+        
+        if total_weight > 0:
+            final_score = weighted_score / total_weight
+            final_matches.append({
+                'product_id': product_id,
+                'description': data['description'],
+                'score': final_score,
+                'methods_used': list(set(data['methods'])),
+                'num_methods': len(set(data['methods']))
+            })
+    
+    # Sort by score and number of methods used
+    final_matches.sort(key=lambda x: (x['score'], x['num_methods']), reverse=True)
+    
+    return {
+        'matches': final_matches[:top_n],
+        'best_score': final_matches[0]['score'] if final_matches else 0,
+        'total_candidates': len(final_matches)
+    }
+
+def enhanced_catalog_matching(item_description, catalog_df, min_confidence=0.3):
+    
+    result = get_closest_catalog_match(item_description, catalog_df, top_n=5)
+    
+    if result['matches'] and result['best_score'] >= min_confidence:
+        best_match = result['matches'][0]
+        return {
+            'matched': True,
+            'product_id': best_match['product_id'],
+            'description': best_match['description'],
+            'confidence': best_match['score'],
+            'methods': best_match['methods_used'],
+            'all_matches': result['matches']
+        }
+    else:
+        return {
+            'matched': False,
+            'product_id': None,
+            'description': None,
+            'confidence': 0,
+            'methods': [],
+            'all_matches': result['matches']
+        }
